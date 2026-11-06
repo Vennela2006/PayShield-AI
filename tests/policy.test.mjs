@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {evaluatePayment} from '../lib/policy-core.mjs';
+const base={agentId:'procurement-agent',recipient:'studio@northstar.test',amount:129,currency:'USD',recentTransactions:0};
+test('allows an approved recipient within policy',()=>assert.equal(evaluatePayment(base).decision,'ALLOW'));
+test('blocks an explicitly blocked recipient',()=>assert.equal(evaluatePayment({...base,recipient:'suspicious@fraud.test'}).decision,'BLOCK'));
+test('blocks an amount above transaction limit',()=>assert.equal(evaluatePayment({...base,amount:501}).decision,'BLOCK'));
+test('requires human review for unknown recipient',()=>assert.equal(evaluatePayment({...base,recipient:'new-vendor@example.test'}).decision,'REVIEW'));
+test('requires human approval above threshold',()=>assert.equal(evaluatePayment({...base,amount:300}).decision,'REVIEW'));
+test('allows approved high-value payment after human approval',()=>assert.equal(evaluatePayment({...base,amount:300,approvedByHuman:true}).decision,'ALLOW'));
+test('blocks non-positive amount',()=>assert.equal(evaluatePayment({...base,amount:0}).decision,'BLOCK'));
+test('blocks excessive hourly frequency',()=>assert.equal(evaluatePayment({...base,recentTransactions:5}).decision,'BLOCK'));
