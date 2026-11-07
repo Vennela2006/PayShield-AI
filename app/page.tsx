@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import {
   ModuleRegistry,
   AllCommunityModule,
@@ -9,10 +9,22 @@ import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-quartz.css';
 import {AgGridReact} from 'ag-grid-react';
 import type {ColDef} from 'ag-grid-community';
+import AnalyticsStudio from '@/components/analytics-studio';
+import FraudGraph from '@/components/fraud-graph';
+import EvidenceReview from '@/components/evidence-review';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 type Tx={id:string;time:string;agent:string;recipient:string;amount:number;status:string;risk:number;source:string};
+type InvestigationCase = {
+  id: string;
+  title: string;
+  transactionIds: string[];
+  status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  notes: string[];
+  createdAt: string;
+};
 const seed:Tx[]=[
 {id:'PS-80421',time:'10:42:18',agent:'procurement-agent',recipient:'studio@northstar.test',amount:129.00,status:'ALLOWED',risk:12,source:'PayPal Sandbox'},
 {id:'PS-80420',time:'10:39:02',agent:'travel-agent-02',recipient:'suspicious@fraud.test',amount:890.00,status:'BLOCKED',risk:98,source:'AgentPay Firewall'},
@@ -22,7 +34,7 @@ const seed:Tx[]=[
 ];
 const nav=[['Overview',Activity],['Agent Firewall',ShieldCheck],['Live Transactions',Wallet],['Fraud Intelligence',Network],['Investigation Cases',FileSearch],['Recovery Workspace',Upload],['Analytics Studio',ChartNoAxesCombined],['Security Policies',LockKeyhole]] as const;
 export default function Home(){
- const [active,setActive]=useState('Overview'); const [rows,setRows]=useState(seed); const [recipient,setRecipient]=useState('studio@northstar.test'); const [amount,setAmount]=useState('129'); const [agent,setAgent]=useState('procurement-agent'); const [decision,setDecision]=useState<any>(null); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(''); const [evidence,setEvidence]=useState<any>(null); const [caseOpen,setCaseOpen]=useState(false); const [approvalUrl,setApprovalUrl]=useState('');
+ const [active,setActive]=useState('Overview'); const [cases, setCases] = useState<InvestigationCase[]>([]); const [rows,setRows]=useState(seed); const [recipient,setRecipient]=useState('studio@northstar.test'); const [amount,setAmount]=useState('129'); const [agent,setAgent]=useState('procurement-agent'); const [decision,setDecision]=useState<any>(null); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(''); const [evidence,setEvidence]=useState<any>(null); const [caseOpen,setCaseOpen]=useState(false); const [approvalUrl,setApprovalUrl]=useState('');
  const [approvalRequestId, setApprovalRequestId] = useState('');
 const [approvalPin, setApprovalPin] = useState('');
 const [approvalStatus, setApprovalStatus] = useState('');
@@ -57,7 +69,7 @@ useEffect(() => {
         const tx = d.transaction;
 
         setNotice(
-          `PayPal capture status: ${tx.status} · Order ${tx.orderId}`
+          `PayPal capture status: ${tx.status} Â· Order ${tx.orderId}`
         );
 
         setRows((prev) => [
@@ -215,15 +227,88 @@ async function createOrder() {
   }
 }
 
- async function uploadFile(file?:File){if(!file)return;setBusy(true);try{const fd=new FormData();fd.append('file',file);const r=await fetch('/api/evidence/extract',{method:'POST',body:fd});const d=await r.json();setEvidence(d);setNotice(d.message||'Evidence processed. Verify extracted fields before using them.')}catch(e:any){setNotice(e.message)}finally{setBusy(false)}}
- const allowed=rows.filter(x=>x.status==='ALLOWED').length; const blocked=rows.filter(x=>x.status==='BLOCKED').length;
- return <main className="shell"><aside className="sidebar"><div className="brand"><div className="brandmark"><ShieldCheck size={22}/></div><div><b>PayShield<span> AI</span></b><small>PAYMENT SECURITY</small></div></div><div className="workspace"><span className="live-dot"/> COMMAND CENTER <ChevronRight size={13}/></div><nav>{nav.map(([label,Icon])=><button key={label} onClick={()=>setActive(label)} className={active===label?'nav active':'nav'}><Icon size={17}/><span>{label}</span>{label==='Agent Firewall'&&<i className="nav-count">2</i>}</button>)}</nav><div className="side-bottom"><div className="secure-card"><div className="secure-icon"><LockKeyhole size={16}/></div><b>Environment secured</b><p>Sandbox mode · Test data only</p><span className="status-line"><i/> All systems operational</span></div><div className="profile"><div className="avatar">VS</div><div><b>Vennela's workspace</b><small>Administrator</small></div><SlidersHorizontal size={16}/></div></div></aside>
+ async function uploadFile(file?: File) {
+    if (!file) return;
+
+    setBusy(true);
+    setEvidence(null);
+    setNotice('Processing uploaded evidence...');
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const response = await fetch('/api/evidence/extract', {
+        method: 'POST',
+        body: fd,
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || `Evidence extraction failed (${response.status}).`);
+      }
+
+      setEvidence(data);
+      setNotice(data.message || 'Evidence processed. Verify extracted fields before using them.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Evidence extraction failed.';
+      setNotice(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+   function createCase(transactionId: string, title: string) {
+    const transaction = rows.find(row => row.id === transactionId);
+
+    if (!transaction) {
+      setNotice('Select a valid transaction before creating a case.');
+      return;
+    }
+
+    const newCase: InvestigationCase = {
+      id: `CASE-${Date.now()}`,
+      title: title.trim() || `Review transaction ${transaction.id}`,
+      transactionIds: [transaction.id],
+      status: 'OPEN',
+      priority: transaction.risk >= 70 ? 'HIGH' : transaction.risk >= 40 ? 'MEDIUM' : 'LOW',
+      notes: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    setCases(prev => [newCase, ...prev]);
+    setNotice(`${newCase.id} created successfully.`);
+  }
+
+  function updateCaseStatus(caseId: string, status: InvestigationCase['status']) {
+    setCases(prev => prev.map(item =>
+      item.id === caseId ? { ...item, status } : item
+    ));
+  }
+
+  function addCaseNote(caseId: string, note: string) {
+    const cleanNote = note.trim();
+    if (!cleanNote) return;
+
+    setCases(prev => prev.map(item =>
+      item.id === caseId
+        ? { ...item, notes: [...item.notes, cleanNote] }
+        : item
+    ));
+  }
+const allowed=rows.filter(x=>x.status==='ALLOWED').length; const blocked=rows.filter(x=>x.status==='BLOCKED').length;
+ return <main className="shell"><aside className="sidebar"><div className="brand"><div className="brandmark"><ShieldCheck size={22}/></div><div><b>PayShield<span> AI</span></b><small>PAYMENT SECURITY</small></div></div><div className="workspace"><span className="live-dot"/> COMMAND CENTER <ChevronRight size={13}/></div><nav>{nav.map(([label,Icon])=><button key={label} onClick={()=>setActive(label)} className={active===label?'nav active':'nav'}><Icon size={17}/><span>{label}</span>{label==='Agent Firewall'&&<i className="nav-count">2</i>}</button>)}</nav><div className="side-bottom"><div className="secure-card"><div className="secure-icon"><LockKeyhole size={16}/></div><b>Environment secured</b><p>Sandbox mode Â· Test data only</p><span className="status-line"><i/> All systems operational</span></div><div className="profile"><div className="avatar">VS</div><div><b>Vennela's workspace</b><small>Administrator</small></div><SlidersHorizontal size={16}/></div></div></aside>
  <section className="main"><header className="topbar"><div className="crumb">Workspace <ChevronRight size={14}/> <b>{active}</b></div><div className="top-actions"><span className="env"><i/> SANDBOX ENVIRONMENT</span><button className="icon-btn" title="Search"><Search size={17}/></button><button className="icon-btn" title="Notifications"><Bell size={17}/><em/></button><button className="icon-btn" title="Help"><CircleHelp size={17}/></button></div></header>
  <div className="content"><div className="page-heading"><div><div className="eyebrow"><span/> AI-POWERED PAYMENT DEFENSE</div><h1>{active==='Overview'?'Security command center':active}</h1><p>Monitor agent activity, enforce payment policies, and investigate threats in real time.</p></div><div className="heading-right"><span className="updated"><span className="live-dot"/> LIVE MONITORING</span><button className="outline-btn" onClick={()=>{setRows(seed);setDecision(null);setNotice('Demo data refreshed.')}}><RefreshCw size={14}/> Refresh data</button></div></div>
  {active !== 'Overview' ? (
   <ModuleView
     active={active}
     rows={rows}
+    cases={cases}
+    setCases={setCases}
+    createCase={createCase}
+    updateCaseStatus={updateCaseStatus}
+    addCaseNote={addCaseNote}
     columns={columns}
     approvalUrl={approvalUrl}
     agent={agent}
@@ -246,8 +331,8 @@ async function createOrder() {
     evidence={evidence}
   />
 ) : <>
- <div className="hero-strip"><div className="hero-copy"><div className="hero-kicker"><Sparkles size={13}/> AUTONOMOUS AI AGENT PAYMENT FIREWALL</div><h2>Trust every transaction.<br/><span>Verify every intention.</span></h2><p>Deterministic guardrails for autonomous payments — with human control at every critical decision.</p><button className="primary-btn" onClick={()=>setActive('Agent Firewall')}>Open AgentPay Firewall <ArrowUpRight size={16}/></button></div><div className="hero-visual"><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="core"><ShieldCheck size={42}/><small>PAYSHIELD</small></div><div className="orbit-tag tag-a"><span className="live-dot"/> POLICY ENGINE</div><div className="orbit-tag tag-b"><LockKeyhole size={12}/> ZERO TRUST</div><div className="orbit-tag tag-c"><Activity size={12}/> LIVE RISK</div></div><div className="hero-foot"><span>POLICY ENGINE <b>ACTIVE</b></span><span>DECISION LATENCY <b>42ms</b></span><span>LAST SYNC <b>Just now</b></span></div></div>
- <div className="stats"><Stat icon={<Activity/>} label="Transactions monitored" value="1,284" change="↑ 12.8%" tone="teal"/><Stat icon={<ShieldAlert/>} label="Threats blocked" value="37" change={`${blocked} in this demo`} tone="red"/><Stat icon={<Clock3/>} label="Pending approvals" value="08" change="Requires attention" tone="amber"/><Stat icon={<Wallet/>} label="Value protected" value="$24.8K" change="Sandbox estimate" tone="violet"/></div>
+ <div className="hero-strip"><div className="hero-copy"><div className="hero-kicker"><Sparkles size={13}/> AUTONOMOUS AI AGENT PAYMENT FIREWALL</div><h2>Trust every transaction.<br/><span>Verify every intention.</span></h2><p>Deterministic guardrails for autonomous payments â€” with human control at every critical decision.</p><button className="primary-btn" onClick={()=>setActive('Agent Firewall')}>Open AgentPay Firewall <ArrowUpRight size={16}/></button></div><div className="hero-visual"><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="core"><ShieldCheck size={42}/><small>PAYSHIELD</small></div><div className="orbit-tag tag-a"><span className="live-dot"/> POLICY ENGINE</div><div className="orbit-tag tag-b"><LockKeyhole size={12}/> ZERO TRUST</div><div className="orbit-tag tag-c"><Activity size={12}/> LIVE RISK</div></div><div className="hero-foot"><span>POLICY ENGINE <b>ACTIVE</b></span><span>DECISION LATENCY <b>42ms</b></span><span>LAST SYNC <b>Just now</b></span></div></div>
+ <div className="stats"><Stat icon={<Activity/>} label="Transactions monitored" value="1,284" change="â†‘ 12.8%" tone="teal"/><Stat icon={<ShieldAlert/>} label="Threats blocked" value="37" change={`${blocked} in this demo`} tone="red"/><Stat icon={<Clock3/>} label="Pending approvals" value="08" change="Requires attention" tone="amber"/><Stat icon={<Wallet/>} label="Value protected" value="$24.8K" change="Sandbox estimate" tone="violet"/></div>
  <div className="section-row"><div><h3>Payment activity</h3><p>Latest transactions evaluated by the firewall</p></div><button className="text-btn" onClick={()=>setActive('Live Transactions')}>View all transactions <ArrowUpRight size={14}/></button></div>
  <div className="grid-wrap"><div className="grid-toolbar"><div className="grid-title"><span className="live-dot"/> LIVE TRANSACTION STREAM <span className="tiny-count">{rows.length} RECORDS</span></div><button className="filter-btn"><SlidersHorizontal size={14}/> Filters</button></div><div className="ag-theme-quartz-dark transaction-grid"><AgGridReact<Tx> rowData={rows} columnDefs={columns} defaultColDef={{sortable:true,filter:true,resizable:true}} pagination={true} paginationPageSize={5}  paginationPageSizeSelector={[5, 10, 20, 50]} domLayout="autoHeight" headerHeight={42} rowHeight={52} animateRows={true} suppressCellFocus={true}/></div></div>
  <div className="lower-grid"><section className="panel firewall-panel"><div className="panel-head"><div><div className="eyebrow">POLICY SIMULATOR</div><h3>Test a payment request</h3></div><span className="pill review">DETERMINISTIC</span></div><p className="panel-sub">Evaluate an agent payment against your active spending policy before it reaches PayPal.</p><div className="form-grid"><label>Agent identity<select value={agent} onChange={e=>setAgent(e.target.value)}><option>procurement-agent</option><option>travel-agent-02</option><option>finance-agent</option></select></label><label>Recipient email<input value={recipient} onChange={e=>setRecipient(e.target.value)} /></label><label>Payment amount (USD)<input type="number" min="0.01" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label>{approvalRequestId && (
@@ -274,16 +359,20 @@ async function createOrder() {
 
     <small>{approvalStatus}</small>
   </div>
-)}</div><div className="button-row"><button className="primary-btn" disabled={busy} onClick={evaluate}><ShieldCheck size={15}/> Evaluate policy</button><button className="outline-btn" disabled={busy || !(decision?.decision === 'ALLOW' || (decision?.approvalRequired && approvalStatus === 'APPROVED'))} onClick={createOrder}><Wallet size={15}/> Create PayPal order</button></div>{decision&&<div className={`decision-box ${decision.decision.toLowerCase()}`}><div className="decision-icon">{decision.decision==='ALLOW'?<Check/>:decision.decision==='BLOCK'?<X/>:<AlertTriangle/>}</div><div><b>{decision.decision} — {decision.decision==='ALLOW'?'Policy checks passed':decision.decision==='BLOCK'?'Payment blocked':'Human review required'}</b>{(decision.reasons||[]).map((r:string,i:number)=><small key={i}>• {r}</small>)}</div></div>}{notice&&<div className="notice">{notice}</div>}{approvalUrl&&<a className="primary-btn" href={approvalUrl}>Continue to PayPal approval <ArrowUpRight size={14}/></a>}</section>
- <section className="panel"><div className="panel-head"><div><div className="eyebrow">FRAUD INTELLIGENCE</div><h3>Suspicious relationships</h3></div><button className="icon-btn" onClick={()=>setActive('Fraud Intelligence')}><ArrowUpRight size={16}/></button></div><p className="panel-sub">Connected activity flagged for investigation. Signals are not proof of wrongdoing.</p><div className="graph-preview"><svg viewBox="0 0 460 190" role="img" aria-label="Illustrative transaction relationship graph"><g stroke="#31445d" strokeWidth="1.4"><path d="M75 90 L190 40 L300 80 L390 35 M75 90 L190 145 L300 80 L390 150 M190 40 L190 145" fill="none"/></g><g fill="#0c1a2b" stroke="#20d9b1" strokeWidth="2"><circle cx="75" cy="90" r="17"/><circle cx="190" cy="40" r="13"/><circle cx="190" cy="145" r="13"/><circle cx="300" cy="80" r="20"/></g><circle cx="390" cy="35" r="14" fill="#281a25" stroke="#ef5350" strokeWidth="2.5"/><circle cx="390" cy="150" r="14" fill="#281a25" stroke="#ef5350" strokeWidth="2.5"/><g fill="#d8e5f5" fontSize="10" textAnchor="middle"><text x="75" y="120">Agent A</text><text x="190" y="18">Vendor B</text><text x="190" y="174">Vendor C</text><text x="300" y="113">Hub wallet</text><text x="390" y="16">Flagged</text><text x="390" y="177">Flagged</text></g></svg><div className="graph-legend"><span><i className="teal-dot"/> Known entity</span><span><i className="red-dot"/> Flagged signal</span></div></div><div className="case-row"><div className="case-icon"><AlertTriangle size={16}/></div><div><b>CASE-2026-018 · Shared recipient cluster</b><small>4 linked transfers · 2 flagged signals</small></div><button className="text-btn" onClick={()=>setCaseOpen(!caseOpen)}>{caseOpen?'Close':'Review'} <ChevronRight size={14}/></button></div>{caseOpen&&<div className="case-detail">Illustrative synthetic case. Review transaction provenance and supporting evidence before making any allegation.</div>}</section></div>
- <div className="lower-grid second"><section className="panel"><div className="panel-head"><div><div className="eyebrow">RECOVERY WORKSPACE</div><h3>Evidence intake</h3></div><span className="pill allowed">OCR READY</span></div><p className="panel-sub">Upload a receipt or screenshot to extract candidate transaction details. Always verify before use.</p><label className="upload-zone"><input type="file" accept="image/*,.pdf,.txt" onChange={e=>uploadFile(e.target.files?.[0])}/><div className="upload-icon"><Upload size={20}/></div><b>Drop evidence or browse files</b><small>PNG, JPG, PDF or TXT · Demo extractor supports text files; connect PaddleOCR for image/PDF OCR.</small></label>{evidence&&<div className="extract-result"><b>Extraction result · {evidence.mode}</b><p>{JSON.stringify(evidence.fields)}</p><small>Candidate values only — confirm against the original document.</small></div>}</section><section className="panel studio-panel"><div className="panel-head"><div><div className="eyebrow">ANALYTICS STUDIO</div><h3>Ask your payment data</h3></div><span className="pill review">SPONSOR INTEGRATION</span></div><p className="panel-sub">Starter-ready analytics area. AG Studio requires the official starter's licensed Studio package and your trial key.</p><div className="prompt-card"><Sparkles size={16}/><span>“Show high-risk transactions above $250 grouped by recipient.”</span><button className="icon-btn" onClick={()=>setNotice('AG Studio integration requires the official PayPal starter package and AG_STUDIO_LICENSE_KEY. See SETUP.md.')}><ArrowUpRight size={15}/></button></div><div className="studio-foot"><span><i className="amber-dot"/> License configuration required</span><a href="https://www.ag-grid.com/" target="_blank" rel="noreferrer">AG Grid docs <ExternalLink size={12}/></a></div></section></div>
+)}</div><div className="button-row"><button className="primary-btn" disabled={busy} onClick={evaluate}><ShieldCheck size={15}/> Evaluate policy</button><button className="outline-btn" disabled={busy || !(decision?.decision === 'ALLOW' || (decision?.approvalRequired && approvalStatus === 'APPROVED'))} onClick={createOrder}><Wallet size={15}/> Create PayPal order</button></div>{decision&&<div className={`decision-box ${decision.decision.toLowerCase()}`}><div className="decision-icon">{decision.decision==='ALLOW'?<Check/>:decision.decision==='BLOCK'?<X/>:<AlertTriangle/>}</div><div><b>{decision.decision} â€” {decision.decision==='ALLOW'?'Policy checks passed':decision.decision==='BLOCK'?'Payment blocked':'Human review required'}</b>{(decision.reasons||[]).map((r:string,i:number)=><small key={i}>â€¢ {r}</small>)}</div></div>}{notice&&<div className="notice">{notice}</div>}{approvalUrl&&<a className="primary-btn" href={approvalUrl}>Continue to PayPal approval <ArrowUpRight size={14}/></a>}</section>
+ <section className="panel"><div className="panel-head"><div><div className="eyebrow">FRAUD INTELLIGENCE</div><h3>Suspicious relationships</h3></div><button className="icon-btn" onClick={()=>setActive('Fraud Intelligence')}><ArrowUpRight size={16}/></button></div><p className="panel-sub">Connected activity flagged for investigation. Signals are not proof of wrongdoing.</p><div className="graph-preview"><svg viewBox="0 0 460 190" role="img" aria-label="Illustrative transaction relationship graph"><g stroke="#31445d" strokeWidth="1.4"><path d="M75 90 L190 40 L300 80 L390 35 M75 90 L190 145 L300 80 L390 150 M190 40 L190 145" fill="none"/></g><g fill="#0c1a2b" stroke="#20d9b1" strokeWidth="2"><circle cx="75" cy="90" r="17"/><circle cx="190" cy="40" r="13"/><circle cx="190" cy="145" r="13"/><circle cx="300" cy="80" r="20"/></g><circle cx="390" cy="35" r="14" fill="#281a25" stroke="#ef5350" strokeWidth="2.5"/><circle cx="390" cy="150" r="14" fill="#281a25" stroke="#ef5350" strokeWidth="2.5"/><g fill="#d8e5f5" fontSize="10" textAnchor="middle"><text x="75" y="120">Agent A</text><text x="190" y="18">Vendor B</text><text x="190" y="174">Vendor C</text><text x="300" y="113">Hub wallet</text><text x="390" y="16">Flagged</text><text x="390" y="177">Flagged</text></g></svg><div className="graph-legend"><span><i className="teal-dot"/> Known entity</span><span><i className="red-dot"/> Flagged signal</span></div></div><div className="case-row"><div className="case-icon"><AlertTriangle size={16}/></div><div><b>CASE-2026-018 Â· Shared recipient cluster</b><small>4 linked transfers Â· 2 flagged signals</small></div><button className="text-btn" onClick={()=>setCaseOpen(!caseOpen)}>{caseOpen?'Close':'Review'} <ChevronRight size={14}/></button></div>{caseOpen&&<div className="case-detail">Illustrative synthetic case. Review transaction provenance and supporting evidence before making any allegation.</div>}</section></div>
+ <div className="lower-grid second"><section className="panel"><div className="panel-head"><div><div className="eyebrow">RECOVERY WORKSPACE</div><h3>Evidence intake</h3></div><span className="pill allowed">OCR READY</span></div><p className="panel-sub">Upload a receipt or screenshot to extract candidate transaction details. Always verify before use.</p><label className="upload-zone"><input type="file" accept="image/*,.pdf,.txt" onChange={e=>uploadFile(e.target.files?.[0])}/><div className="upload-icon"><Upload size={20}/></div><b>Drop evidence or browse files</b><small>PNG, JPG, PDF or TXT Â· Demo extractor supports text files; connect PaddleOCR for image/PDF OCR.</small></label>{evidence&&<div className="extract-result"><b>Extraction result Â· {evidence.mode}</b><p>{JSON.stringify(evidence.fields)}</p><small>Candidate values only â€” confirm against the original document.</small></div>}</section><section className="panel studio-panel"><div className="panel-head"><div><div className="eyebrow">ANALYTICS STUDIO</div><h3>Ask your payment data</h3></div><span className="pill review">SPONSOR INTEGRATION</span></div><p className="panel-sub">Starter-ready analytics area. AG Studio requires the official starter's licensed Studio package and your trial key.</p><div className="prompt-card"><Sparkles size={16}/><span>â€œShow high-risk transactions above $250 grouped by recipient.â€</span><button className="icon-btn" onClick={()=>setNotice('AG Studio integration requires the official PayPal starter package and AG_STUDIO_LICENSE_KEY. See SETUP.md.')}><ArrowUpRight size={15}/></button></div><div className="studio-foot"><span><i className="amber-dot"/> License configuration required</span><a href="https://www.ag-grid.com/" target="_blank" rel="noreferrer">AG Grid docs <ExternalLink size={12}/></a></div></section></div>
  </>}
- <footer>PAYSHIELD AI <span>·</span> Secure by design. Explainable by default. <span className="footer-right">DEMO DATA IS SYNTHETIC · NOT FINANCIAL ADVICE</span></footer>
+ <footer>PAYSHIELD AI <span>Â·</span> Secure by design. Explainable by default. <span className="footer-right">DEMO DATA IS SYNTHETIC Â· NOT FINANCIAL ADVICE</span></footer>
  </div></section></main>
 }
 function ModuleView({
   active,
   rows,
+  cases,
+  createCase,
+  updateCaseStatus,
+  addCaseNote,
   columns,
   approvalUrl,
   agent,
@@ -318,14 +407,230 @@ function ModuleView({
       </button>
       <small>{approvalStatus}</small>
     </div>
-  )}</div><div className="button-row"><button className="primary-btn" disabled={busy} onClick={evaluate}><ShieldCheck size={15}/> Evaluate policy</button><button className="outline-btn" disabled={busy || !(decision?.decision === 'ALLOW' || (decision?.approvalRequired && approvalStatus === 'APPROVED'))} onClick={createOrder}><Wallet size={15}/> Create PayPal order</button></div>{decision&&<div className={`decision-box ${String(decision.decision).toLowerCase()}`}><div className="decision-icon"><ShieldCheck/></div><div><b>{decision.decision}</b>{(decision.reasons||[]).map((r:string,i:number)=><small key={i}>• {r}</small>)}</div></div>}{notice&&<div className="notice">{notice}</div>}{approvalUrl&&<a className="primary-btn" href={approvalUrl}>Continue to PayPal approval <ArrowUpRight size={14}/></a>}</div>}
+  )}</div><div className="button-row"><button className="primary-btn" disabled={busy} onClick={evaluate}><ShieldCheck size={15}/> Evaluate policy</button><button className="outline-btn" disabled={busy || !(decision?.decision === 'ALLOW' || (decision?.approvalRequired && approvalStatus === 'APPROVED'))} onClick={createOrder}><Wallet size={15}/> Create PayPal order</button></div>{decision&&<div className={`decision-box ${String(decision.decision).toLowerCase()}`}><div className="decision-icon"><ShieldCheck/></div><div><b>{decision.decision}</b>{(decision.reasons||[]).map((r:string,i:number)=><small key={i}>â€¢ {r}</small>)}</div></div>}{notice&&<div className="notice">{notice}</div>}{approvalUrl&&<a className="primary-btn" href={approvalUrl}>Continue to PayPal approval <ArrowUpRight size={14}/></a>}</div>}
   {active==='Live Transactions' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">TRANSACTION LEDGER</div><h3>{rows.length} demo transactions</h3></div><span className="pill allowed">SANDBOX DATA</span></div><div className="ag-theme-quartz-dark transaction-grid"><AgGridReact<Tx> rowData={rows} columnDefs={columns} defaultColDef={{sortable:true,filter:true,resizable:true,floatingFilter:true}} pagination={true} paginationPageSize={10} paginationPageSizeSelector={[5, 10, 20, 50]} domLayout="autoHeight" headerHeight={42} rowHeight={52} animateRows={true}/></div></div>}
-  {active==='Fraud Intelligence' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">ENTITY RELATIONSHIP MAP</div><h3>Suspicious transaction cluster</h3></div><span className="pill review">SIMULATED SIGNALS</span></div><div className="graph-preview"><svg viewBox="0 0 460 190" role="img" aria-label="Synthetic transaction relationship graph"><g stroke="#52647c" strokeWidth="1.5"><path d="M75 90 L190 40 L300 80 L390 35 M75 90 L190 145 L300 80 L390 150 M190 40 L190 145" fill="none"/></g><g fill="#0c1a2b" stroke="#20d9b1" strokeWidth="2"><circle cx="75" cy="90" r="17"/><circle cx="190" cy="40" r="13"/><circle cx="190" cy="145" r="13"/><circle cx="300" cy="80" r="20"/></g><g fill="#281a25" stroke="#ef5350" strokeWidth="2.5"><circle cx="390" cy="35" r="14"/><circle cx="390" cy="150" r="14"/></g><g fill="#d8e5f5" fontSize="10" textAnchor="middle"><text x="75" y="120">Agent A</text><text x="190" y="18">Vendor B</text><text x="190" y="174">Vendor C</text><text x="300" y="113">Hub wallet</text><text x="390" y="16">Flagged</text><text x="390" y="177">Flagged</text></g></svg></div><p className="panel-sub">Two flagged endpoints share a hub-wallet relationship in this synthetic example. Investigate provenance before drawing conclusions.</p></div>}
-  {active==='Investigation Cases' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">CASE QUEUE</div><h3>Open investigations</h3></div><span className="pill review">1 NEEDS REVIEW</span></div><div className="case-row"><div className="case-icon"><AlertTriangle size={16}/></div><div><b>CASE-2026-018 · Shared recipient cluster</b><small>4 linked transfers · 2 flagged signals · Synthetic demo case</small></div><span className="pill review">OPEN</span></div><div className="case-detail">Next steps: verify transaction references, review recipient history, attach supporting evidence and record an analyst decision. This case is illustrative, not a real fraud allegation.</div></div>}
-  {active==='Recovery Workspace' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">EVIDENCE INTAKE</div><h3>Upload payment evidence</h3></div><span className="pill allowed">EXTRACTION API</span></div><p className="panel-sub">Upload a receipt or screenshot. Extracted values are candidates and must be checked against the original.</p><label className="upload-zone"><input type="file" accept="image/*,.pdf,.txt" onChange={e=>uploadFile(e.target.files?.[0])}/><div className="upload-icon"><Upload size={20}/></div><b>Drop evidence or browse files</b><small>PNG, JPG, PDF or TXT · OCR service configuration may be required</small></label>{evidence&&<div className="extract-result"><b>Extraction result · {evidence.mode}</b><p>{JSON.stringify(evidence.fields)}</p><small>Verify every field before using it in a complaint.</small></div>}</div>}
-  {active==='Analytics Studio' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">SPONSOR ANALYTICS</div><h3>AG Studio connection</h3></div><span className="pill review">CONFIGURATION REQUIRED</span></div><p className="panel-sub">The current package does not yet contain the licensed AG Studio runtime. This screen is an integration checklist, not a claim that AG Studio is connected.</p><div className="case-detail">Planned dashboard prompt: “Show high-risk transactions above $250 grouped by recipient, with risk distribution.” Configure the official PayPal starter's AG Studio package and license before enabling this module.</div><p className="studio-foot"><a href="https://www.ag-grid.com/" target="_blank" rel="noreferrer">AG Grid documentation <ExternalLink size={12}/></a></p></div>}
-  {active==='Security Policies' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">ACTIVE POLICY</div><h3>Default agent spending policy</h3></div><span className="pill allowed">ENFORCED</span></div><div className="policy-grid"><div><small>Per-transaction limit</small><b>$500</b></div><div><small>Daily limit (configured)</small><b>$1,500</b></div><div><small>Human approval above</small><b>$250</b></div><div><small>Hourly transaction cap</small><b>5</b></div></div><h3 className="policy-heading">Approved recipients</h3><p className="panel-sub">studio@northstar.test · merchant@demo.test</p><h3 className="policy-heading">Blocked recipients</h3><p className="panel-sub">suspicious@fraud.test</p><p className="notice">Demo policy values are configured in lib/policy.ts. Daily aggregate tracking and editable policy persistence are not implemented yet.</p></div>}
+ {active === 'Fraud Intelligence' && (
+  <div className="panel">
+    <div className="panel-head">
+      <div>
+        <div className="eyebrow">ENTITY RELATIONSHIP MAP</div>
+        <h3>Transaction Relationship Intelligence</h3>
+      </div>
+      <span className="pill review">INVESTIGATIVE SIGNALS</span>
+    </div>
+
+    <p className="panel-sub">
+      Explore relationships between payment agents and recipients.
+      Red connections indicate high-risk transactions.
+      Connections are investigative signals, not proof of fraud.
+    </p>
+
+    <FraudGraph rows={rows} />
+  </div>
+  )}
+   {active === 'Investigation Cases' && (
+     <div className="panel">
+       <div className="panel-head">
+         <div>
+           <div className="eyebrow">CASE MANAGEMENT</div>
+           <h3>Investigation workspace</h3>
+         </div>
+         <span className="pill review">{cases.length} CASE(S)</span>
+       </div>
+
+       <p className="panel-sub">
+         Create and manage investigations using transactions in the current demo ledger.
+       </p>
+
+       <form
+         className="form-grid"
+         onSubmit={e => {
+           e.preventDefault();
+           const form = e.currentTarget;
+           const data = new FormData(form);
+           createCase(
+             String(data.get('transactionId') || ''),
+             String(data.get('title') || '')
+           );
+           form.reset();
+         }}
+       >
+         <label>
+           Related transaction
+           <select name="transactionId" required defaultValue={rows[0]?.id || ''}>
+             {rows.map((row: Tx) => (
+               <option key={row.id} value={row.id}>
+                 {row.id} · ${row.amount.toFixed(2)} · {row.status}
+               </option>
+             ))}
+           </select>
+         </label>
+
+         <label>
+           Case title
+           <input name="title" placeholder="e.g. Unusual recipient activity" required />
+         </label>
+
+         <button className="primary-btn" type="submit" disabled={rows.length === 0}>
+           <AlertTriangle size={15} /> Create investigation
+         </button>
+       </form>
+
+       <div className="section-row">
+         <div>
+           <h3>Case queue</h3>
+           <p>{cases.length} investigation(s) created in this session</p>
+         </div>
+       </div>
+
+       {cases.length === 0 ? (
+         <div className="case-detail">
+           No investigation cases yet. Select a transaction above to create your first case.
+         </div>
+       ) : (
+         cases.map((item: InvestigationCase) => (
+           <div className="case-detail" key={item.id} style={{ marginBottom: 14 }}>
+             <div className="case-row">
+               <div className="case-icon"><AlertTriangle size={16} /></div>
+               <div>
+                 <b>{item.id} · {item.title}</b>
+                 <small>
+                   Priority: {item.priority} · Created: {new Date(item.createdAt).toLocaleString()}
+                 </small>
+               </div>
+               <span className={`pill ${item.status === 'RESOLVED' ? 'allowed' : 'review'}`}>
+                 {item.status}
+               </span>
+             </div>
+
+             <p><strong>Linked transactions:</strong> {item.transactionIds.join(', ')}</p>
+
+             {item.transactionIds.map((transactionId: string) => {
+               const transaction = rows.find((row: Tx) => row.id === transactionId);
+               return transaction ? (
+                 <div key={transactionId}>
+                   <small>
+                     {transaction.agent} → {transaction.recipient} ·
+                     ${transaction.amount.toFixed(2)} · Risk {transaction.risk}/100 ·
+                     {transaction.status}
+                   </small>
+                 </div>
+               ) : (
+                 <small key={transactionId}>
+                   Transaction {transactionId} is no longer in the current ledger.
+                 </small>
+               );
+             })}
+
+             <label style={{ display: 'block', marginTop: 12 }}>
+               Investigation status
+               <select
+                 value={item.status}
+                 onChange={e => updateCaseStatus(item.id, e.target.value as InvestigationCase['status'])}
+               >
+                 <option value="OPEN">OPEN</option>
+                 <option value="INVESTIGATING">INVESTIGATING</option>
+                 <option value="RESOLVED">RESOLVED</option>
+               </select>
+             </label>
+
+             <form
+               onSubmit={e => {
+                 e.preventDefault();
+                 const form = e.currentTarget;
+                 const data = new FormData(form);
+                 addCaseNote(item.id, String(data.get('note') || ''));
+                 form.reset();
+               }}
+             >
+               <label style={{ display: 'block', marginTop: 12 }}>
+                 Add analyst note
+                 <input name="note" placeholder="Record an observation or next step..." required />
+               </label>
+               <button className="outline-btn" type="submit" style={{ marginTop: 8 }}>
+                 Add note
+               </button>
+             </form>
+
+             {item.notes.length > 0 && (
+               <div style={{ marginTop: 12 }}>
+                 <strong>Analyst notes</strong>
+                 <ul>
+                   {item.notes.map((note: string, index: number) => (
+                     <li key={`${item.id}-note-${index}`}>{note}</li>
+                   ))}
+                 </ul>
+               </div>
+             )}
+           </div>
+         ))
+       )}
+
+       <small>
+         Demo limitation: cases and notes are held in application memory and are not persisted to a database.
+         Case links and risk priorities are investigative aids, not proof of fraud.
+       </small>
+     </div>
+   )}
+  {active==='Recovery Workspace' && (
+    <div className="panel">
+      <div className="panel-head">
+        <div>
+          <div className="eyebrow">EVIDENCE INTAKE</div>
+          <h3>Upload payment evidence</h3>
+        </div>
+        <span className="pill allowed">EXTRACTION API</span>
+      </div>
+
+      <p className="panel-sub">
+        Upload a receipt or screenshot. Extracted values are candidates and must be checked against the original.
+      </p>
+
+      <label className="upload-zone">
+        <input
+          type="file"
+          accept="image/*,.pdf,.txt"
+          onChange={e => uploadFile(e.target.files?.[0])}
+        />
+        <div className="upload-icon"><Upload size={20}/></div>
+        <b>Drop evidence or browse files</b>
+        <small>PNG, JPG, PDF or TXT · OCR service configuration may be required</small>
+      </label>
+
+      {notice && <div className="notice">{notice}</div>}
+
+      <EvidenceReview evidence={evidence} />
+    </div>
+  )}
+  {active === 'Analytics Studio' && (
+  <div className="panel">
+    <div className="panel-head">
+      <div>
+        <div className="eyebrow">SPONSOR ANALYTICS</div>
+        <h3>PayShield Transaction Intelligence</h3>
+      </div>
+      <span className="pill allowed">AG STUDIO</span>
+    </div>
+
+    <p className="panel-sub">
+      Explore transaction amounts, recipient patterns, risk scores and
+      payment decisions. Data shown is synthetic or from PayPal Sandbox.
+    </p>
+
+    <AnalyticsStudio rows={rows} />
+  </div>
+)}
+  {active==='Security Policies' && <div className="panel"><div className="panel-head"><div><div className="eyebrow">ACTIVE POLICY</div><h3>Default agent spending policy</h3></div><span className="pill allowed">ENFORCED</span></div><div className="policy-grid"><div><small>Per-transaction limit</small><b>$500</b></div><div><small>Daily limit (configured)</small><b>$1,500</b></div><div><small>Human approval above</small><b>$250</b></div><div><small>Hourly transaction cap</small><b>5</b></div></div><h3 className="policy-heading">Approved recipients</h3><p className="panel-sub">studio@northstar.test Â· merchant@demo.test</p><h3 className="policy-heading">Blocked recipients</h3><p className="panel-sub">suspicious@fraud.test</p><p className="notice">Demo policy values are configured in lib/policy.ts. Daily aggregate tracking and editable policy persistence are not implemented yet.</p></div>}
  </section>
 }
 
 function Stat({icon,label,value,change,tone}:{icon:React.ReactNode;label:string;value:string;change:string;tone:string}){return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-change">{change}</div></div>}
+
+
+
+
+
+
+
+
+
