@@ -229,75 +229,239 @@ async function createOrder() {
 }
 
  async function uploadFile(file?: File) {
-    if (!file) return;
+  if (!file) return;
 
+  setBusy(true);
+  setEvidence(null);
+  setNotice('Processing uploaded evidence...');
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+
+    const response = await fetch('/api/evidence/extract', {
+      method: 'POST',
+      body: fd,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || data.message ||
+        `Evidence extraction failed (${response.status}).`
+      );
+    }
+
+    const saveResponse = await fetch('/api/evidence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceFile: data.fields?.sourceFile || file.name,
+        mode: data.mode || 'UNKNOWN',
+        extractedText: data.text || '',
+        extractedFields: data.fields || {},
+      }),
+    });
+
+    const savedData = await saveResponse.json();
+
+    if (!saveResponse.ok) {
+      throw new Error(
+        savedData.error || 'Evidence extracted but could not be saved.'
+      );
+    }
+
+    setEvidence({
+      ...data,
+      evidenceId: savedData.evidence.id,
+    });
+
+    setNotice(
+      'Evidence extracted and saved. Verify all candidate fields before using them.'
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Evidence extraction failed.';
+
+    setNotice(message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function verifyEvidenceRecord(reviewedFields: {
+  amount: string;
+  transactionId: string;
+  date: string;
+  recipient: string;
+}) {
+  if (!evidence?.evidenceId) {
+    setNotice('Evidence record ID is missing. Upload the evidence again.');
+    return false;
+  }
+
+  try {
+    const response = await fetch('/api/evidence', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: evidence.evidenceId,
+        acknowledged: true,
+        reviewedFields,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to save evidence verification.');
+    }
+
+    setNotice('Evidence verification saved successfully.');
+    return true;
+  } catch (error) {
+    setNotice(
+      error instanceof Error
+        ? error.message
+        : 'Unable to save evidence verification.'
+    );
+    return false;
+  }
+}
+
+async function invalidateEvidenceVerification() {
+  if (!evidence?.evidenceId) return;
+
+  try {
+    const response = await fetch('/api/evidence', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: evidence.evidenceId,
+        acknowledged: false,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to invalidate verification.');
+    }
+
+    setNotice('Evidence edited. Previous verification has been cleared.');
+  } catch (error) {
+    setNotice(
+      error instanceof Error
+        ? error.message
+        : 'Unable to invalidate verification.'
+    );
+  }
+}
+async function createCase(transactionId: string, title: string) {
+  const transaction = rows.find(row => row.id === transactionId);
+
+  if (!transaction) {
+    setNotice('Select a valid transaction before creating a case.');
+    return;
+  }
+
+  try {
     setBusy(true);
-    setEvidence(null);
-    setNotice('Processing uploaded evidence...');
 
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
+    const response = await fetch('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: title.trim() || `Investigation for ${transaction.id}`,
+        transactionIds: [transaction.id],
+        status: 'OPEN',
+        priority:
+          transaction.risk >= 70
+            ? 'HIGH'
+            : transaction.risk >= 40
+              ? 'MEDIUM'
+              : 'LOW',
+        notes: [],
+      }),
+    });
 
-      const response = await fetch('/api/evidence/extract', {
-        method: 'POST',
-        body: fd,
-      });
+    const data = await response.json();
 
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.error || data.message || `Evidence extraction failed (${response.status}).`);
-      }
-
-      setEvidence(data);
-      setNotice(data.message || 'Evidence processed. Verify extracted fields before using them.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Evidence extraction failed.';
-      setNotice(message);
-    } finally {
-      setBusy(false);
-    }
-  }
-   function createCase(transactionId: string, title: string) {
-    const transaction = rows.find(row => row.id === transactionId);
-
-    if (!transaction) {
-      setNotice('Select a valid transaction before creating a case.');
-      return;
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to create investigation case.');
     }
 
-    const newCase: InvestigationCase = {
-      id: `CASE-${Date.now()}`,
-      title: title.trim() || `Review transaction ${transaction.id}`,
-      transactionIds: [transaction.id],
-      status: 'OPEN',
-      priority: transaction.risk >= 70 ? 'HIGH' : transaction.risk >= 40 ? 'MEDIUM' : 'LOW',
-      notes: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    setCases(prev => [newCase, ...prev]);
-    setNotice(`${newCase.id} created successfully.`);
+    setCases(prev => [data.case, ...prev]);
+    setNotice(`${data.case.id} created successfully.`);
+  } catch (error) {
+    setNotice(
+      error instanceof Error
+        ? error.message
+        : 'Unable to create investigation case.'
+    );
+  } finally {
+    setBusy(false);
   }
+}
 
-  function updateCaseStatus(caseId: string, status: InvestigationCase['status']) {
-    setCases(prev => prev.map(item =>
-      item.id === caseId ? { ...item, status } : item
-    ));
+async function updateCaseStatus(
+  caseId: string,
+  status: InvestigationCase['status']
+) {
+  try {
+    const response = await fetch('/api/cases', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: caseId, status }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to update case status.');
+    }
+
+    setCases(prev =>
+      prev.map(item => item.id === caseId ? data.case : item)
+    );
+    setNotice(`Case ${caseId} status updated.`);
+  } catch (error) {
+    setNotice(
+      error instanceof Error ? error.message : 'Unable to update case status.'
+    );
   }
+}
 
-  function addCaseNote(caseId: string, note: string) {
-    const cleanNote = note.trim();
-    if (!cleanNote) return;
+async function addCaseNote(caseId: string, note: string) {
+  const cleanNote = note.trim();
+  if (!cleanNote) return;
 
-    setCases(prev => prev.map(item =>
-      item.id === caseId
-        ? { ...item, notes: [...item.notes, cleanNote] }
-        : item
-    ));
+  try {
+    const response = await fetch('/api/cases', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: caseId, note: cleanNote }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to save analyst note.');
+    }
+
+    setCases(prev =>
+      prev.map(item => item.id === caseId ? data.case : item)
+    );
+    setNotice('Analyst note saved successfully.');
+  } catch (error) {
+    setNotice(
+      error instanceof Error ? error.message : 'Unable to save analyst note.'
+    );
   }
-const allowed=rows.filter(x=>x.status==='ALLOWED').length; const blocked=rows.filter(x=>x.status==='BLOCKED').length;
+}const allowed=rows.filter(x=>x.status==='ALLOWED').length; const blocked=rows.filter(x=>x.status==='BLOCKED').length;
  return <main className="shell"><aside className="sidebar"><div className="brand"><div className="brandmark"><ShieldCheck size={22}/></div><div><b>PayShield<span> AI</span></b><small>PAYMENT SECURITY</small></div></div><div className="workspace"><span className="live-dot"/> COMMAND CENTER <ChevronRight size={13}/></div><nav>{nav.map(([label,Icon])=><button key={label} onClick={()=>setActive(label)} className={active===label?'nav active':'nav'}><Icon size={17}/><span>{label}</span>{label==='Agent Firewall'&&<i className="nav-count">2</i>}</button>)}</nav><div className="side-bottom"><div className="secure-card"><div className="secure-icon"><LockKeyhole size={16}/></div><b>Environment secured</b><p>Sandbox mode Â· Test data only</p><span className="status-line"><i/> All systems operational</span></div><div className="profile"><div className="avatar">VS</div><div><b>Vennela's workspace</b><small>Administrator</small></div><SlidersHorizontal size={16}/></div></div></aside>
  <section className="main"><header className="topbar"><div className="crumb">Workspace <ChevronRight size={14}/> <b>{active}</b></div><div className="top-actions"><span className="env"><i/> SANDBOX ENVIRONMENT</span><button className="icon-btn" title="Search"><Search size={17}/></button><button className="icon-btn" title="Notifications"><Bell size={17}/><em/></button><button className="icon-btn" title="Help"><CircleHelp size={17}/></button></div></header>
  <div className="content"><div className="page-heading"><div><div className="eyebrow"><span/> AI-POWERED PAYMENT DEFENSE</div><h1>{active==='Overview'?'Security command center':active}</h1><p>Monitor agent activity, enforce payment policies, and investigate threats in real time.</p></div><div className="heading-right"><span className="updated"><span className="live-dot"/> LIVE MONITORING</span><button className="outline-btn" onClick={()=>{setRows(seed);setDecision(null);setNotice('Demo data refreshed.')}}><RefreshCw size={14}/> Refresh data</button></div></div>
@@ -330,6 +494,8 @@ const allowed=rows.filter(x=>x.status==='ALLOWED').length; const blocked=rows.fi
     notice={notice}
     uploadFile={uploadFile}
     evidence={evidence}
+    verifyEvidenceRecord={verifyEvidenceRecord}
+    invalidateEvidenceVerification={invalidateEvidenceVerification}
   />
 ) : <>
  <div className="hero-strip"><div className="hero-copy"><div className="hero-kicker"><Sparkles size={13}/> AUTONOMOUS AI AGENT PAYMENT FIREWALL</div><h2>Trust every transaction.<br/><span>Verify every intention.</span></h2><p>Deterministic guardrails for autonomous payments â€” with human control at every critical decision.</p><button className="primary-btn" onClick={()=>setActive('Agent Firewall')}>Open AgentPay Firewall <ArrowUpRight size={16}/></button></div><div className="hero-visual"><div className="orbit orbit-a"/><div className="orbit orbit-b"/><div className="core"><ShieldCheck size={42}/><small>PAYSHIELD</small></div><div className="orbit-tag tag-a"><span className="live-dot"/> POLICY ENGINE</div><div className="orbit-tag tag-b"><LockKeyhole size={12}/> ZERO TRUST</div><div className="orbit-tag tag-c"><Activity size={12}/> LIVE RISK</div></div><div className="hero-foot"><span>POLICY ENGINE <b>ACTIVE</b></span><span>DECISION LATENCY <b>42ms</b></span><span>LAST SYNC <b>Just now</b></span></div></div>
@@ -394,6 +560,8 @@ function ModuleView({
   notice,
   uploadFile,
   evidence,
+  verifyEvidenceRecord,
+  invalidateEvidenceVerification,
 }: any) {
  const titleMap:any={'Agent Firewall':'AgentPay Firewall','Live Transactions':'Live transaction monitor','Fraud Intelligence':'Fraud intelligence graph','Investigation Cases':'Investigation case manager','Recovery Workspace':'Payment recovery workspace','Analytics Studio':'Analytics Studio','Security Policies':'Security policy controls'};
  return <section className="module-page">
@@ -600,7 +768,11 @@ function ModuleView({
 
       {notice && <div className="notice">{notice}</div>}
 
-      <EvidenceReview evidence={evidence} />
+      <EvidenceReview
+        evidence={evidence}
+        onVerify={verifyEvidenceRecord}
+        onInvalidate={invalidateEvidenceVerification}
+      />
       <ReportingGuide />
     </div>
   )}
@@ -627,6 +799,12 @@ function ModuleView({
 }
 
 function Stat({icon,label,value,change,tone}:{icon:React.ReactNode;label:string;value:string;change:string;tone:string}){return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-change">{change}</div></div>}
+
+
+
+
+
+
 
 
 

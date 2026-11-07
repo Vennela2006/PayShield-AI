@@ -11,18 +11,35 @@ type EvidenceFields = {
 };
 
 type EvidenceData = {
+  evidenceId?: string;
   mode?: string;
   message?: string;
   fields?: EvidenceFields;
 };
 
-export default function EvidenceReview({ evidence }: { evidence: EvidenceData | null }) {
+type ReviewedFields = {
+  amount: string;
+  transactionId: string;
+  date: string;
+  recipient: string;
+};
+
+export default function EvidenceReview({
+  evidence,
+  onVerify,
+  onInvalidate,
+}: {
+  evidence: EvidenceData | null;
+  onVerify: (fields: ReviewedFields) => Promise<boolean>;
+  onInvalidate: () => Promise<void>;
+}) {
   const [amount, setAmount] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [date, setDate] = useState('');
   const [recipient, setRecipient] = useState('');
   const [verified, setVerified] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
@@ -33,19 +50,50 @@ export default function EvidenceReview({ evidence }: { evidence: EvidenceData | 
     setDate(fields?.date ?? '');
     setRecipient(fields?.recipient ?? '');
     setVerified(false);
+    setAcknowledged(false);
+    setSaving(false);
     setDraft('');
   }, [evidence]);
 
-  function verifyEvidence() {
-    if (!amount.trim() || !transactionId.trim() || !date.trim() || !recipient.trim()) {
+  async function invalidateVerification() {
+    const wasAcknowledged = acknowledged || verified;
+
+    setVerified(false);
+    setAcknowledged(false);
+    setDraft('');
+
+    if (wasAcknowledged) {
+      await onInvalidate();
+    }
+  }
+
+  async function verifyEvidence() {
+    if (
+      !acknowledged ||
+      !amount.trim() ||
+      !transactionId.trim() ||
+      !date.trim() ||
+      !recipient.trim() ||
+      !Number.isFinite(Number(amount)) ||
+      Number(amount) <= 0
+    ) {
       return;
     }
 
-    if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-      return;
-    }
+    setSaving(true);
 
-    setVerified(true);
+    try {
+      const saved = await onVerify({
+        amount,
+        transactionId: transactionId.trim(),
+        date: date.trim(),
+        recipient: recipient.trim(),
+      });
+
+      setVerified(saved);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function generateDraft() {
@@ -81,38 +129,49 @@ export default function EvidenceReview({ evidence }: { evidence: EvidenceData | 
       <div className="form-grid">
         <label>
           Transaction ID
-          <input value={transactionId} onChange={e => {
-            setTransactionId(e.target.value);
-            setVerified(false);
-            setDraft('');
-          }} />
+          <input
+            value={transactionId}
+            onChange={e => {
+              setTransactionId(e.target.value);
+              void invalidateVerification();
+            }}
+          />
         </label>
 
         <label>
           Amount (USD)
-          <input type="number" min="0.01" step="0.01" value={amount} onChange={e => {
-            setAmount(e.target.value);
-            setVerified(false);
-            setDraft('');
-          }} />
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={amount}
+            onChange={e => {
+              setAmount(e.target.value);
+              void invalidateVerification();
+            }}
+          />
         </label>
 
         <label>
           Transaction date
-          <input value={date} onChange={e => {
-            setDate(e.target.value);
-            setVerified(false);
-            setDraft('');
-          }} />
+          <input
+            value={date}
+            onChange={e => {
+              setDate(e.target.value);
+              void invalidateVerification();
+            }}
+          />
         </label>
 
         <label>
           Recipient
-          <input value={recipient} onChange={e => {
-            setRecipient(e.target.value);
-            setVerified(false);
-            setDraft('');
-          }} />
+          <input
+            value={recipient}
+            onChange={e => {
+              setRecipient(e.target.value);
+              void invalidateVerification();
+            }}
+          />
         </label>
       </div>
 
@@ -124,9 +183,14 @@ export default function EvidenceReview({ evidence }: { evidence: EvidenceData | 
             type="checkbox"
             checked={acknowledged}
             onChange={e => {
-              setAcknowledged(e.target.checked);
-              setVerified(false);
-              setDraft('');
+              const checked = e.target.checked;
+              setAcknowledged(checked);
+
+              if (!checked) {
+                setVerified(false);
+                setDraft('');
+                void onInvalidate();
+              }
             }}
           />
           I checked these values against the original evidence.
@@ -135,7 +199,7 @@ export default function EvidenceReview({ evidence }: { evidence: EvidenceData | 
 
       {verified && (
         <p style={{ color: '#20d9b1', marginTop: 10 }}>
-          Evidence fields manually verified by the analyst.
+          Evidence fields manually verified and saved by the analyst.
         </p>
       )}
 
@@ -144,9 +208,16 @@ export default function EvidenceReview({ evidence }: { evidence: EvidenceData | 
           type="button"
           className="primary-btn"
           onClick={verifyEvidence}
-          disabled={!acknowledged || !amount.trim() || !transactionId.trim() || !date.trim() || !recipient.trim()}
+          disabled={
+            saving ||
+            !acknowledged ||
+            !amount.trim() ||
+            !transactionId.trim() ||
+            !date.trim() ||
+            !recipient.trim()
+          }
         >
-          Verify evidence
+          {saving ? 'Saving verification...' : 'Verify evidence'}
         </button>
 
         <button
@@ -177,4 +248,3 @@ export default function EvidenceReview({ evidence }: { evidence: EvidenceData | 
     </div>
   );
 }
-
