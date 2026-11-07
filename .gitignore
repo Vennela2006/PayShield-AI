@@ -14,3 +14,9 @@ coverage
 
 # Local test evidence
 sample-evidence.txt
+
+# Local PDF extraction test artifacts
+sample-receipt.pdf
+sample-scanned-receipt.pdf
+sample-scanned-receipt-compressed.pdf
+test-pdf-upload.py
