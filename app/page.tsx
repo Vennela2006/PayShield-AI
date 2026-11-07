@@ -12,6 +12,7 @@ import type {ColDef} from 'ag-grid-community';
 import AnalyticsStudio from '@/components/analytics-studio';
 import FraudGraph from '@/components/fraud-graph';
 import EvidenceReview from '@/components/evidence-review';
+import ReportingGuide from '@/components/reporting-guide';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -600,6 +601,7 @@ function ModuleView({
       {notice && <div className="notice">{notice}</div>}
 
       <EvidenceReview evidence={evidence} />
+      <ReportingGuide />
     </div>
   )}
   {active === 'Analytics Studio' && (
@@ -625,6 +627,7 @@ function ModuleView({
 }
 
 function Stat({icon,label,value,change,tone}:{icon:React.ReactNode;label:string;value:string;change:string;tone:string}){return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-change">{change}</div></div>}
+
 
 
 
