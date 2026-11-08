@@ -36,3 +36,217 @@
   background: #5de9c9;
   text-decoration: none;
 }
+
+/* PAYSHIELD LOGIN PAGE */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 16px;
+  background:
+    radial-gradient(ellipse at 50% 35%, #142b3b 0%, transparent 55%),
+    #090e19;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 38px;
+  background: #101a2a;
+  border: 1px solid #26394e;
+  border-radius: 12px;
+  box-shadow: 0 25px 80px #0008;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 27px;
+}
+
+.login-logo {
+  width: 55px;
+  height: 55px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 17px;
+  border: 1px solid #236c69;
+  border-radius: 14px;
+  background: #102c36;
+  color: var(--teal);
+  font: 700 25px 'Space Grotesk';
+  box-shadow: 0 0 25px #20d9b122;
+}
+
+.login-header h1 {
+  font: 700 29px 'Space Grotesk';
+  letter-spacing: -1px;
+  margin: 0;
+}
+
+.login-header h1 span {
+  color: var(--teal);
+}
+
+.login-header p {
+  color: #8fa1b6;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 9px;
+}
+
+.login-security {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px;
+  margin-bottom: 21px;
+  border: 1px solid #1e4145;
+  border-radius: 5px;
+  background: #102522;
+  color: #9bb9b6;
+  font: 9px 'DM Mono';
+  letter-spacing: .8px;
+}
+
+.login-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 9px #20d9b1;
+}
+
+.login-oauth {
+  display: grid;
+  gap: 11px;
+}
+
+.login-oauth button,
+.login-submit {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  border-radius: 6px;
+  font: 600 12px 'DM Sans';
+  transition: .2s ease;
+}
+
+.login-google {
+  background: #eef4fb;
+  border: 1px solid #eef4fb;
+  color: #101a29;
+}
+
+.login-google:hover {
+  background: #d8e5f2;
+}
+
+.login-github {
+  background: #182538;
+  border: 1px solid #34465d;
+  color: #eaf2fb;
+}
+
+.login-github:hover {
+  background: #22334a;
+}
+
+.login-oauth button:disabled,
+.login-submit:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 25px 0;
+}
+
+.login-divider span {
+  flex: 1;
+  height: 1px;
+  background: #29394c;
+}
+
+.login-divider small {
+  color: #71849a;
+  font: 9px 'DM Mono';
+  letter-spacing: .7px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.login-form label {
+  color: #b4c2d2;
+  font-size: 11px;
+  margin-top: 5px;
+}
+
+.login-form input {
+  width: 100%;
+  height: 43px;
+  padding: 0 12px;
+  border: 1px solid #304158;
+  border-radius: 5px;
+  outline: none;
+  background: #0b1422;
+  color: #eef4fb;
+  font: 12px 'DM Sans';
+}
+
+.login-form input::placeholder {
+  color: #65778d;
+}
+
+.login-form input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px #20d9b11c;
+}
+
+.login-submit {
+  margin-top: 10px;
+  background: var(--teal);
+  border: 1px solid var(--teal);
+  color: #061a1a;
+  font-weight: 700;
+}
+
+.login-submit:hover {
+  background: #5de9c9;
+}
+
+.login-error {
+  padding: 10px;
+  border: 1px solid #70404a;
+  border-radius: 5px;
+  background: #371f27;
+  color: #ffaaa6;
+  font-size: 11px;
+}
+
+.login-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 28px;
+  padding-top: 17px;
+  border-top: 1px solid #26364b;
+  color: #71849a;
+  text-align: center;
+  font: 8px 'DM Mono';
+  letter-spacing: .7px;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 27px 21px;
+  }
+}
