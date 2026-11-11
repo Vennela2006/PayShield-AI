@@ -1,7 +1,7 @@
-﻿'use client';
 
-import { AgStudio } from 'ag-studio-react';
+'use client';
 
+import { AgStudio, AgStudioProvider } from 'ag-studio-react';
 type Transaction = {
   id: string;
   time: string;
@@ -34,19 +34,23 @@ export default function AnalyticsStudio({ rows }: AnalyticsStudioProps) {
     <div
       style={{
         width: '100%',
-        height: '720px',
+        height: '620px',
         minWidth: 0,
         overflow: 'hidden',
       }}
     >
-      <AgStudio
-        data={studioData}
-        mode="edit"
-        style={{
-          width: '100%',
-          height: '100%',
-        }}
-      />
+      <AgStudioProvider
+        licenseKey={process.env.NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY}
+      >
+        <AgStudio
+          data={studioData}
+          mode="edit"
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
+        />
+      </AgStudioProvider>
     </div>
   );
 }
